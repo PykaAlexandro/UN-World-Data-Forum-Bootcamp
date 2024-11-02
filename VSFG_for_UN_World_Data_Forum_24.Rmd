@@ -1,0 +1,218 @@
+---
+title: "VSFG for UN World Data Forum 2024"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: scroll
+---
+<!-- to eliminate the title bar -->
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.0/jquery.min.js"></script>
+<script>
+$(document).ready(function() {
+  $('.navbar').remove();
+  $('body').css('padding-top', '0px');
+});
+</script>
+
+```{r setup, include = FALSE}
+#loading the libraries
+library(flexdashboard)
+library(readr)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(ggplot2)
+library(plotly)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(leaflet)
+library(leafpop)
+library(scales)
+#loading the data frame, reading Codigo Iso 3166 as a character column and Indefinido as a numeric one
+df <- read_csv("Entradas_de_extranjeros_a_Colombia_20241017.csv", 
+               col_types = list(`Codigo Iso 3166` = col_character(),
+                                Indefinido = col_double()))
+#removing the incomplete year 2023 and fixing the Iso3166 column by adding leading zeroes
+df <- filter(df, Año != 2023) %>%
+  mutate(Iso3166 = str_pad(`Codigo Iso 3166`, 3, pad = "0"))
+```
+
+## Row
+
+### {data-width=600}
+
+On the occasion of the 2024 UN World Data Forum, we will here examine a data frame ([source](https://www.datos.gov.co/Estad-sticas-Nacionales/Entradas-de-extranjeros-a-Colombia/96sh-4v8d/data_preview)) containing information about the number, nationality and gender of people entering Colombia between 2012 and 2022.
+
+### {data-width=400}
+
+```{r picture, echo = F}
+#the logo of the public charity
+knitr::include_graphics("VFSG Logo to include on viz - light background.png")
+```
+
+## Row
+
+### Total Number of Entries
+
+```{r}
+#we calculate the total number of entries to be displayed in a valueBox
+entries <- tally(df, wt = Total)
+valueBox(formattable::comma(entries, format = "d"), icon = "fa-solid fa-user-group", color = "#E69F00")
+```
+
+### Different Nationalities
+
+```{r}
+#we calculate the total number of distinct nationalities to be displayed in a valueBox
+nationalities <- tally(df, wt = n_distinct(Nacionalidad))
+valueBox(nationalities, icon = "fa-solid fa-globe", color = "#009e73")
+```
+
+## Row {data-height=400}
+
+### Number of Entries per Year by Gender {data-width=800}
+
+```{r, fig.width=12}
+#we define a colorblind-friendly palette
+cbbPalette <- c("#56B4E9", "#0072B2")
+#we save the bar chart into an object
+p1 <- df %>%
+#we translate the variables of interest into English and remove Total
+  mutate(Year = factor(Año),
+         Female = Femenino,
+         Male = Masculino,
+         Total = NULL) %>%
+#we transform the data frame into long format, for easier manipulation and plotting
+  pivot_longer(cols = c("Female", "Male"), names_to = "Gender", values_to = "Total") %>%
+#we calculate the yearly number of entries, splitting by Gender  
+  count(Year, Gender, wt = Total, name = "Total") %>%
+#we build the graph
+  ggplot(aes(Year, Total, fill = Gender, text = paste('Entries: ', formattable::comma(Total, format = "d"), '<br>Gender: ', Gender))) +
+  geom_col(position = position_stack())  +
+  scale_fill_manual(values = cbbPalette) +
+  scale_y_continuous(labels = scales::label_comma()) +
+  labs(x = NULL,
+       y = NULL)
+#we feed the object into plotly, for interactivity
+ggplotly(p1, tooltip = c("text")) %>%
+  layout(legend = list(orientation = 'v', x = 0.1, y = 0.9),
+         hovermode = 'x') %>%
+  config(displayModeBar = FALSE)
+```
+
+### {data-width=200}
+
+We see here a steady increase until the COVID years, with 2022 that reattained pre-2018 levels. We have a slight prevalence of male entries, with yearly percentages that range from 55% to 63%.
+
+Over the 11 years, 16,420,124 males (58%) and 11,766,217 females (42%) have entered (to note, there is an inconsistency -of 1,227- between the gender values and the Total column values, while the "Indefinido" gender column is empty all along the 11 years).   
+
+For context, Colombia had a population of 45,308,899 in 2011 and of 51,737,944 in 2022.
+
+The chart is interactive.
+
+## Row {data-height=400}
+
+### Number of Entries per Month, differentiating by Year {data-width=800}
+
+```{r, fig.width=12}
+#we save the data frame of interest into an object
+hdf <- df %>%
+#we transform the variables of interest into factors, for easier plotting
+  mutate(Month = factor(Mes,
+                        levels = c("Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"),
+                        labels = c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"),
+                        ordered = TRUE),
+         Year = factor(Año)) %>%
+#we calculate the yearly monthly totals
+  count(Year, Month, wt = Total, name = "Total")
+#we define the highlighting variable
+hdf <- highlight_key(hdf, ~ Year)
+#we build the graph and we save in into an object
+p2 <- ggplot(hdf, aes(Month, Total, group = Year, text = paste(Year, "<br>", formattable::comma(Total, , format = "d")))) +
+  geom_line(color = "blue") +
+  scale_y_continuous(labels = scales::label_comma()) +
+  labs(x = NULL,
+       y = NULL)
+#we feed the object into plotly, for interactivity
+ggplotly(p2, tooltip = c("text")) %>%
+  config(displayModeBar = FALSE) %>%
+  highlight(on = "plotly_hover",
+            color="darkblue")
+```
+
+### {data-width=200}
+
+<br>
+
+About the months of entry, we can generally see July, August and December as the major ones.
+
+The difference, along the year, between the month with the fewest entries and the one with the most incremented from 41,993 in 2012 to 101,857 in 2019.
+
+Hovering over a line, by the x axis grid lines, will highlight it, showing the monthly value as well. A double-click will undo the selection.
+
+## Row {data-height=400}
+
+### World Map of Entries {data-width=800}
+
+```{r, fig.width = 12}
+#we load the world map
+world <- ne_countries(scale = "medium", returnclass = "sf")
+#we save the bar chart into an object
+p3 <- world %>%
+#we add the Country totals to the world map
+  left_join(count(df, Iso3166, wt = Total, name = "Total"), by =join_by(iso_n3_eh == Iso3166)) %>%
+#we build the graph
+  ggplot(aes(text = paste(name, "<br>", formattable::comma(Total, format = "d")))) +
+  geom_sf(aes(fill = Total)) +
+  scale_fill_distiller(palette = "Oranges", direction = 1, transform = "sqrt") +
+  theme_void() +
+  theme(legend.position = "none",
+        legend.title = element_blank())
+#we feed the object into plotly, for interactivity
+ggplotly(p3, tooltip = c("text"))
+```
+
+### {data-width=200}
+
+<br>
+
+Among the 239 different nationalities, the majority of entries stem from Venezuela (20.11% over the total) and US (19.65%), followed by other American and European Countries, with percentages starting from 5.52% for Mexico and 4.22% for Spain.   
+
+We also have 20747 entries with a 99999 iso3166 code, for values like Refugee, Palestine, Tibet, Yugoslavia and Unknown.
+
+Is it possible to hover over the countries to visualize the total amount of entries over the 11 years. More entries per country, the darker the color of the country (with square root scaling). 
+
+## Row {data-height=400}
+
+### National Points of Entry {data-width=800}
+
+```{r, message = FALSE, warning = FALSE}
+#we save the data frame into an object, to feed it into leaflet()
+leafdf <- df %>%
+#we calculate the yearly totals by point of entry
+  group_by(`Latitud - Longitud`, Year = Año) %>%
+  summarise(YearTotal = sum(Total)) %>%
+#we calculate the totals by point of entry
+  mutate(TOTAL = sum(YearTotal)) %>%
+#we split the coordinates variable into two, to feed into a subsequent function
+  separate_wider_delim(`Latitud - Longitud`, delim = ",", names = c("Lat", "Lng")) %>%
+#we clean the new coordinates variables
+  mutate(Lat = str_sub(Lat, 2, -1),
+         Lng = str_sub(Lng, 1, -2),
+         across(c(Lat, Lng), as.numeric)) %>%
+#we transform the data frame into wide format, to have popup tables in the map
+  pivot_wider(names_from = "Year", values_from = "YearTotal", values_fill = 0, names_sort = TRUE)
+#we feed the object into leaflet()
+leaflet(leafdf) %>% 
+  addProviderTiles(provider = "Esri.WorldStreetMap") %>%
+  addCircleMarkers(radius = ~ rescale(TOTAL, c(1, 25)),
+                   popup = popupTable(leafdf, zcol = 3:14, row.numbers = FALSE, feature.id = FALSE))
+```
+
+### {data-width=200}
+
+<br>
+
+About the point of entries, we have 49 of them (one has no coordinates, for 106 entries), with Bogotá as the main one (57% of entries, 16,116,705), followed by Rionegro in Antioquia (10%, 2,903,333).
+
+Clicking on the circles on the map will show a table with the totals of entries and a breakdown per year. The radius of the circles is scaled by the total over the 11 years.
